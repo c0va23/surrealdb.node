@@ -17,7 +17,7 @@ uuid = "1.8.0"
 
 [build-dependencies]
 napi-build = "2.0.1"
-cargo-lock = "9.0.0"
+cargo-lock = "10.1"
 
 [features]
 rocksdb = ["surrealdb/kv-rocksdb"]
