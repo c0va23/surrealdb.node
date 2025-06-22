@@ -1,12 +1,13 @@
 mod error;
 mod opt;
 
-use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use error::err_map;
 use napi::bindgen_prelude::*;
 use napi::tokio::sync::RwLock;
+use napi::tokio::sync::Semaphore;
 use napi_derive::napi;
 
 use opt::endpoint::Options;
@@ -15,7 +16,6 @@ use serde_json::Value as JsValue;
 use surrealdb::dbs::Session;
 use surrealdb::kvs::Datastore;
 use surrealdb::rpc::format::cbor;
-use surrealdb::rpc::method::Method;
 use surrealdb::kvs::export::Config;
 
 use surrealdb::rpc::{Data, RpcContext};
@@ -30,31 +30,20 @@ impl SurrealdbNodeEngine {
     #[napi]
     pub async fn execute(&self, data: Uint8Array) -> std::result::Result<Uint8Array, Error> {
         let in_data = cbor::req(data.to_vec()).map_err(err_map)?;
-        let method = Method::parse(in_data.method);
-        let res = match method.can_be_immut() {
-            true => {
-                self.0
-                    .read()
-                    .await
-                    .as_ref()
-                    .unwrap()
-                    .execute_immut(method, in_data.params)
-                    .await
-            }
-            false => {
-                self.0
-                    .write()
-                    .await
-                    .as_mut()
-                    .unwrap()
-                    .execute(method, in_data.params)
-                    .await
-            }
-        }
-        .map_err(err_map)?;
 
-        let out = cbor::res(res).map_err(err_map)?;
-        Ok(out.as_slice().into())
+        let data =
+			self.0
+				.read()
+				.await
+				.as_ref()
+				.ok_or_else(|| Error::from_reason("Use after free"))?
+				.execute(in_data.version, in_data.method, in_data.params)
+				.await
+				.map_err(err_map)?;
+
+		let value: Value = data.try_into().map_err(err_map)?;
+		let out = cbor::res(value).map_err(err_map)?;
+		Ok(out.as_slice().into())
     }
 
     // pub fn notifications(&self) -> std::result::Result<sys::ReadableStream, Error> {
@@ -124,11 +113,10 @@ impl SurrealdbNodeEngine {
 
         let session = Session::default().with_rt(true);
 
-        let inner = SurrealdbNodeEngineInner {
+        let inner = SurrealdbNodeEngineInner::new(
             kvs,
             session,
-            vars: Default::default(),
-        };
+        );
 
         Ok(SurrealdbNodeEngine(RwLock::new(Some(inner))))
     }
@@ -147,6 +135,7 @@ impl SurrealdbNodeEngine {
 	pub async fn export(&self, config: Option<Uint8Array>) -> std::result::Result<String, Error> {
 		let lock = self.0.read().await;
 		let inner = lock.as_ref().unwrap();
+		let session = inner.session();
 		let (tx, rx) = channel::unbounded();
 
 		match config {
@@ -154,10 +143,10 @@ impl SurrealdbNodeEngine {
 				let in_config = cbor::parse_value(config.to_vec()).map_err(err_map)?;
 				let config = Config::try_from(&in_config).map_err(err_map)?;
 
-				inner.kvs.export_with_config(&inner.session, tx, config).await.map_err(err_map)?.await.map_err(err_map)?;
+				inner.kvs.export_with_config(&session, tx, config).await.map_err(err_map)?.await.map_err(err_map)?;
 			}
 			None => {
-				inner.kvs.export(&inner.session, tx).await.map_err(err_map)?.await.map_err(err_map)?;
+				inner.kvs.export(&session, tx).await.map_err(err_map)?.await.map_err(err_map)?;
 			}
 		};
 
@@ -173,33 +162,42 @@ impl SurrealdbNodeEngine {
 }
 
 struct SurrealdbNodeEngineInner {
-    pub kvs: Datastore,
-    pub session: Session,
-    pub vars: BTreeMap<String, surrealdb::sql::Value>,
+    kvs: Datastore,
+    session: std::sync::RwLock<Arc<Session>>,
+	lock_semaphore: Arc<Semaphore>,
 }
+
+impl SurrealdbNodeEngineInner {
+	fn new(kvs: Datastore, session: Session) -> Self {
+		SurrealdbNodeEngineInner {
+			kvs,
+			session: std::sync::RwLock::new(Arc::new(session)),
+			lock_semaphore: Arc::new(Semaphore::new(1))
+		}
+	}
+}
+
+
+
 impl RpcContext for SurrealdbNodeEngineInner {
     fn kvs(&self) -> &Datastore {
         &self.kvs
     }
 
-    fn session(&self) -> &Session {
-        &self.session
+    fn session(&self) -> Arc<Session> {
+        self.session.read().unwrap().clone()
     }
 
-    fn session_mut(&mut self) -> &mut Session {
-        &mut self.session
-    }
-
-    fn vars(&self) -> &BTreeMap<String, surrealdb::sql::Value> {
-        &self.vars
-    }
-
-    fn vars_mut(&mut self) -> &mut BTreeMap<String, surrealdb::sql::Value> {
-        &mut self.vars
+    fn set_session(&self, session: Arc<Session>) {
+		*self.session.write().unwrap() = session
     }
 
     fn version_data(&self) -> Data {
 		Value::Strand(format!("surrealdb-{}", env!("SURREALDB_VERSION")).into()).into()
+	}
+
+	fn lock(&self) -> Arc<napi::tokio::sync::Semaphore> {
+		self.lock_semaphore.clone()
 	}
 
     const LQ_SUPPORT: bool = true;
@@ -210,3 +208,6 @@ impl RpcContext for SurrealdbNodeEngineInner {
         async { () }
     }
 }
+
+impl surrealdb::rpc::RpcProtocolV1 for SurrealdbNodeEngineInner {}
+impl surrealdb::rpc::RpcProtocolV2 for SurrealdbNodeEngineInner {}
