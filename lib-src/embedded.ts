@@ -154,7 +154,10 @@ export function surrealdbNodeEngines(opts?: ConnectionOptions): Engines {
 		export(options?: Partial<ExportOptions>): Promise<string> {
 			return this.db.export(options ? new Uint8Array(this.encodeCbor(options)) : undefined);
 		}
-		
+
+		import(data: string): Promise<void> {
+			throw new Error("Method not implemented.");
+		}
     }
 
     return {
