@@ -1,4 +1,4 @@
-import Surreal from "surrealdb";
+import Surreal from "@c0va23/surrealdb";
 import { surrealdbNodeEngines } from "./lib-src/embedded.ts";
 
 async function run(endpoint) {

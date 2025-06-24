@@ -11,12 +11,12 @@ import {
     type RpcRequest,
     type RpcResponse,
     UnexpectedConnectionError,
-} from "surrealdb";
+} from "@c0va23/surrealdb";
 
 /**
  * Construct the engines for the SurrealDB Nodejs implementation. This
  * includes support for `mem` and `surrealkv` protocols.
- * 
+ *
  * @param opts Configuration options
  * @returns The engines
  */
@@ -92,7 +92,7 @@ export function surrealdbNodeEngines(opts?: ConnectionOptions): Engines {
             this.db = undefined;
             await this.reader;
             this.reader = undefined;
-			
+
             if (this.status !== ConnectionStatus.Disconnected) {
                 this.setStatus(ConnectionStatus.Disconnected);
             }

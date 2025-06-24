@@ -1,5 +1,5 @@
 {
-    "name": "@surrealdb/node",
+    "name": "@c0va23/surrealdb.node",
     "version": "1.0.0-beta.4",
     "author": {
         "name": "Raphael Darley",
@@ -43,10 +43,10 @@
         "typescript": "^5.5.4"
     },
     "dependencies": {
-        "surrealdb": "^1.1.0"
+        "@c0va23/surrealdb": "^1.3.6"
     },
     "peerDependencies": {
-        "surrealdb": "^1.0.6"
+        "@c0va23/surrealdb": "^1.3.6"
     },
     "ava": {
         "timeout": "3m"
