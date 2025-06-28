@@ -182,5 +182,6 @@ export type ConnectionOptions = {
               guest_access?: boolean;
               functions?: boolean | string[] | CapabilitiesAllowDenyList;
               network_targets?: boolean | string[] | CapabilitiesAllowDenyList;
+			  experimental_features?: boolean | string[]
           };
 };

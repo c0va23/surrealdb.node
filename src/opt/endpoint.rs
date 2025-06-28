@@ -1,6 +1,6 @@
 use napi::Error;
 use serde::Deserialize;
-use std::collections::HashSet;
+use std::{collections::HashSet, str::FromStr};
 use surrealdb::dbs::capabilities;
 
 #[derive(Deserialize)]
@@ -21,6 +21,7 @@ pub enum CapabilitiesConfig {
         live_query_notifications: Option<bool>,
         functions: Option<Targets>,
         network_targets: Option<Targets>,
+        experimental_features: Option<Targets>
     },
 }
 
@@ -67,6 +68,7 @@ impl TryFrom<CapabilitiesConfig> for capabilities::Capabilities {
 				live_query_notifications,
 				functions,
 				network_targets,
+				experimental_features,
 			} => {
 				let mut capabilities = Self::default();
 
@@ -203,6 +205,33 @@ impl TryFrom<CapabilitiesConfig> for capabilities::Capabilities {
 							}
 						}
 					}
+				}
+
+				if let Some(experimental_features) = experimental_features {
+					capabilities = capabilities.with_experimental(match experimental_features {
+						Targets::Bool(bool_value) =>
+							match bool_value {
+								true => capabilities::Targets::All,
+								false => capabilities::Targets::None,
+							}
+						Targets::Array(features) => {
+							capabilities::Targets::Some(
+								features.iter()
+									.map(|target| capabilities::ExperimentalTarget::from_str(&target))
+									.collect::<
+										Result<
+											HashSet<capabilities::ExperimentalTarget>,
+											capabilities::ParseExperimentalTargetError
+										>
+									>()
+									.map_err(crate::err_map)?
+							)
+						}
+						Targets::Config { allow: _allow, deny: _deny } => {
+							unimplemented!("config is not implemented for experimental features");
+						},
+					})
+
 				}
 
 				Ok(capabilities)
