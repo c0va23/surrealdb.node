@@ -1,6 +1,6 @@
 {
   "name": "@c0va23/surrealdb.node-android-arm64",
-  "version": "1.0.0-beta.6",
+  "version": "1.0.0-beta.7",
   "os": [
     "android"
   ],
