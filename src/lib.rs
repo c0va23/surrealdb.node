@@ -111,6 +111,9 @@ impl SurrealdbNodeEngine {
             kvs
         };
 
+		// Check version or write if is not
+		kvs.check_version().await.map_err(err_map)?;
+
         let session = Session::default().with_rt(true);
 
         let inner = SurrealdbNodeEngineInner::new(
